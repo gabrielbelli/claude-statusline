@@ -101,15 +101,34 @@ fi
 # profile and how many servers it holds; the plug segment below then drops the
 # gateway from its own tally so the same thing isn't counted twice.
 # Active profile = --profile arg of the gateway command (absent = "default").
+# MCP_DOCKER can be registered at three scopes and Claude resolves them
+# local > project > user, so we must look up the args in that same order:
+#   local   → ~/.claude.json .projects[<project_dir>].mcpServers.MCP_DOCKER
+#   project → <project_dir>/.mcp.json .mcpServers.MCP_DOCKER
+#   user    → ~/.claude.json .mcpServers.MCP_DOCKER  (top level)
+# Reading only the top level (user scope) misses a project-local override.
 # Server count via `docker mcp`, cached 60s — the status line re-renders
 # constantly and must not shell out to docker each time.
+proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
 docker_part=""
 docker_in_use=0
-if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ] \
-   && jq -e '.mcpServers.MCP_DOCKER' "$HOME/.claude.json" >/dev/null 2>&1; then
+if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ]; then
+  key="${proj_dir:-$cwd}"
+  # local scope (project entry inside ~/.claude.json)
+  dargs=$(jq -c --arg k "$key" '.projects[$k].mcpServers.MCP_DOCKER.args // empty' "$HOME/.claude.json" 2>/dev/null)
+  # project scope (shared .mcp.json)
+  if [ -z "$dargs" ] && [ -n "$proj_dir" ] && [ -f "${proj_dir}/.mcp.json" ]; then
+    dargs=$(jq -c '.mcpServers.MCP_DOCKER.args // empty' "${proj_dir}/.mcp.json" 2>/dev/null)
+  fi
+  # user scope (top-level)
+  if [ -z "$dargs" ]; then
+    dargs=$(jq -c '.mcpServers.MCP_DOCKER.args // empty' "$HOME/.claude.json" 2>/dev/null)
+  fi
+fi
+if [ -n "$dargs" ]; then
   docker_in_use=1
-  dprofile=$(jq -r '.mcpServers.MCP_DOCKER.args // [] | index("--profile") as $i
-                    | if $i then .[$i+1] else "default" end' "$HOME/.claude.json" 2>/dev/null)
+  dprofile=$(printf '%s' "$dargs" | jq -r 'index("--profile") as $i
+                    | if $i then .[$i+1] else "default" end' 2>/dev/null)
   if [ -n "$dprofile" ] && [ "$dprofile" != "null" ]; then
     dcache="${TMPDIR:-/tmp}/claude-statusline-dockermcp-${dprofile}"
     now=$(date +%s)
@@ -128,7 +147,6 @@ fi
 # gateway is excluded whenever the 🐳 segment is showing it, so it is neither
 # double-counted nor silently dropped — if docker isn't in use, it still counts.
 mcp_part=""
-proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
 if [ "$docker_in_use" -eq 1 ]; then drop='select(. != "MCP_DOCKER")'; else drop='.'; fi
 
 proj_mcp=0
