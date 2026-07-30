@@ -95,6 +95,41 @@ elif [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" != "base" ]; then
   pyenv="$(c 39)🐍 ${CONDA_DEFAULT_ENV}$(r)"
 fi
 
+# ── MCP servers ────────────────────────────────────────────────────────────
+# Count = project .mcp.json + user-level ~/.claude.json mcpServers.
+mcp_part=""
+proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
+mcp_count=0
+if [ -n "$proj_dir" ] && [ -f "${proj_dir}/.mcp.json" ]; then
+  mcp_count=$(jq '.mcpServers | length' "${proj_dir}/.mcp.json" 2>/dev/null || echo 0)
+fi
+if [ -f "$HOME/.claude.json" ]; then
+  g=$(jq '.mcpServers | length' "$HOME/.claude.json" 2>/dev/null || echo 0)
+  mcp_count=$(( mcp_count + g ))
+fi
+[ "$mcp_count" -gt 0 ] && mcp_part="$(c 208)🔌 ${mcp_count}$(r)"
+
+# ── Docker MCP Toolkit profile ─────────────────────────────────────────────
+# Active profile = --profile arg of the gateway command in ~/.claude.json
+# (absent = "default"). Server count via `docker mcp`, cached 60s — the
+# status line re-renders constantly and must not shell out to docker each time.
+docker_part=""
+if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ]; then
+  dprofile=$(jq -r '.mcpServers.MCP_DOCKER.args // [] | index("--profile") as $i
+                    | if $i then .[$i+1] else "default" end' "$HOME/.claude.json" 2>/dev/null)
+  if [ -n "$dprofile" ] && [ "$dprofile" != "null" ]; then
+    dcache="${TMPDIR:-/tmp}/claude-statusline-dockermcp-${dprofile}"
+    now=$(date +%s)
+    mtime=$(stat -f %m "$dcache" 2>/dev/null || stat -c %Y "$dcache" 2>/dev/null || echo 0)
+    if [ $(( now - mtime )) -gt 60 ]; then
+      docker mcp profile server ls 2>/dev/null \
+        | awk -v p="$dprofile" '$1 == p' | wc -l | tr -d ' ' > "$dcache" 2>/dev/null
+    fi
+    dcount=$(cat "$dcache" 2>/dev/null)
+    [ -n "$dcount" ] && docker_part="$(c 39)🐳 ${dprofile}·${dcount}$(r)"
+  fi
+fi
+
 # ── Context ────────────────────────────────────────────────────────────────
 ctx=""
 if [ -n "$used_pct" ]; then
@@ -126,6 +161,8 @@ out="$(b 75)${dir}$(r)"
 [ -n "$git_user" ] && out="${out} $(c 245)${git_user}$(r)"
 [ -n "$claudio" ]  && out="${out}${sep}${claudio}"
 [ -n "$pyenv" ]    && out="${out}${sep}${pyenv}"
+[ -n "$mcp_part" ] && out="${out}${sep}${mcp_part}"
+[ -n "$docker_part" ] && out="${out}${sep}${docker_part}"
 [ -n "$ctx" ]      && out="${out}${sep}$(c 240)◉$(r) ${ctx}"
 [ -n "$rates" ]    && out="${out}${sep}$(c 240)⚡$(r)${rates}"
 

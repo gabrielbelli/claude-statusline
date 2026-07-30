@@ -3,7 +3,7 @@
 Custom status line for [Claude Code](https://code.claude.com). A single bash script that reads the status line JSON from stdin and prints one ANSI-coloured line.
 
 ```
-~/Projects  │  Fable 5 · high  │  main ⇡1 !2  │  ◉ 42%  │  ⚡31% ↻2h0m / 66% ↻2d7h
+~/Projects  │  Fable 5 · high  │  main ⇡1 !2  │  🔌 6  │  🐳 default·4  │  ◉ 42%  │  ⚡31% ↻2h0m / 66% ↻2d7h
 ```
 
 ## Segments (left to right)
@@ -15,6 +15,8 @@ Custom status line for [Claude Code](https://code.claude.com). A single bash scr
 | Git | `git` CLI | branch, ahead/behind, staged/unstaged/untracked, stashes, user email |
 | Claudio | `.claudio` file in cwd | persona indicator, if present |
 | Python env | `$VIRTUAL_ENV` / conda | skipped for `base` |
+| MCP servers | project `.mcp.json` + `~/.claude.json` | `🔌` count of configured servers |
+| Docker MCP Toolkit | `docker mcp` CLI | `🐳` active gateway profile · server count, cached 60 s |
 | Context | `.context_window.used_percentage` | `◉` |
 | Rate limits | `.rate_limits.five_hour` / `.seven_day` | `⚡` used % + `↻` reset countdown |
 
@@ -43,6 +45,7 @@ echo '{"workspace":{"current_dir":"'"$HOME"'/Projects"},"model":{"display_name":
 
 - `jq`
 - `git` (optional — segment skipped outside repos)
+- `docker` with the MCP Toolkit CLI plugin (optional — segment skipped if absent)
 
 ## Licence
 
