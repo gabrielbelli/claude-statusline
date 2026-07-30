@@ -95,26 +95,19 @@ elif [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" != "base" ]; then
   pyenv="$(c 39)🐍 ${CONDA_DEFAULT_ENV}$(r)"
 fi
 
-# ── MCP servers ────────────────────────────────────────────────────────────
-# Count = project .mcp.json + user-level ~/.claude.json mcpServers.
-mcp_part=""
-proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
-mcp_count=0
-if [ -n "$proj_dir" ] && [ -f "${proj_dir}/.mcp.json" ]; then
-  mcp_count=$(jq '.mcpServers | length' "${proj_dir}/.mcp.json" 2>/dev/null || echo 0)
-fi
-if [ -f "$HOME/.claude.json" ]; then
-  g=$(jq '.mcpServers | length' "$HOME/.claude.json" 2>/dev/null || echo 0)
-  mcp_count=$(( mcp_count + g ))
-fi
-[ "$mcp_count" -gt 0 ] && mcp_part="$(c 208)🔌 ${mcp_count}$(r)"
-
 # ── Docker MCP Toolkit profile ─────────────────────────────────────────────
-# Active profile = --profile arg of the gateway command in ~/.claude.json
-# (absent = "default"). Server count via `docker mcp`, cached 60s — the
-# status line re-renders constantly and must not shell out to docker each time.
+# The Docker gateway shows up in Claude's config as a SINGLE server
+# (MCP_DOCKER) that fronts N toolkit servers. This segment surfaces the active
+# profile and how many servers it holds; the plug segment below then drops the
+# gateway from its own tally so the same thing isn't counted twice.
+# Active profile = --profile arg of the gateway command (absent = "default").
+# Server count via `docker mcp`, cached 60s — the status line re-renders
+# constantly and must not shell out to docker each time.
 docker_part=""
-if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ]; then
+docker_in_use=0
+if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ] \
+   && jq -e '.mcpServers.MCP_DOCKER' "$HOME/.claude.json" >/dev/null 2>&1; then
+  docker_in_use=1
   dprofile=$(jq -r '.mcpServers.MCP_DOCKER.args // [] | index("--profile") as $i
                     | if $i then .[$i+1] else "default" end' "$HOME/.claude.json" 2>/dev/null)
   if [ -n "$dprofile" ] && [ "$dprofile" != "null" ]; then
@@ -128,6 +121,26 @@ if command -v docker >/dev/null 2>&1 && [ -f "$HOME/.claude.json" ]; then
     dcount=$(cat "$dcache" 2>/dev/null)
     [ -n "$dcount" ] && docker_part="$(c 39)🐳 ${dprofile}·${dcount}$(r)"
   fi
+fi
+
+# ── MCP servers (plug) ─────────────────────────────────────────────────────
+# Split project (shared .mcp.json) vs global (~/.claude.json). The Docker
+# gateway is excluded whenever the 🐳 segment is showing it, so it is neither
+# double-counted nor silently dropped — if docker isn't in use, it still counts.
+mcp_part=""
+proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
+if [ "$docker_in_use" -eq 1 ]; then drop='select(. != "MCP_DOCKER")'; else drop='.'; fi
+
+proj_mcp=0
+if [ -n "$proj_dir" ] && [ -f "${proj_dir}/.mcp.json" ]; then
+  proj_mcp=$(jq "[.mcpServers // {} | keys[] | ${drop}] | length" "${proj_dir}/.mcp.json" 2>/dev/null || echo 0)
+fi
+glob_mcp=0
+if [ -f "$HOME/.claude.json" ]; then
+  glob_mcp=$(jq "[.mcpServers // {} | keys[] | ${drop}] | length" "$HOME/.claude.json" 2>/dev/null || echo 0)
+fi
+if [ "$proj_mcp" -gt 0 ] || [ "$glob_mcp" -gt 0 ]; then
+  mcp_part="$(c 208)🔌$(r) $(c 76)${proj_mcp}$(dim)p$(r) $(c 245)${glob_mcp}$(dim)g$(r)"
 fi
 
 # ── Context ────────────────────────────────────────────────────────────────
