@@ -1,0 +1,53 @@
+# claude-statusline configuration
+#
+#   cp claude-statusline.conf.example ~/.config/claude-statusline.conf
+#
+# Every value below is the current default, so copying this file changes
+# nothing. Edit in place from a known-good starting point rather than guessing
+# which lines to uncomment. Override the location with $CLAUDE_STATUSLINE_CONF.
+#
+# One key=value per line. Blanks and # comments ignored. An unrecognised key or
+# value is skipped rather than fatal — a typo costs you one segment's styling,
+# not your whole status line.
+
+# Fallback for any segment not named below. `default=short` is the one-line
+# way to fit a narrow terminal.
+default=full
+
+# ── Segments, in render order ──────────────────────────────────────────────
+# Each takes: full | short | off
+#
+#              full                        short
+account=full  # 👤 blue-agent / 🌐·you      👤 / 🌐        icon only
+dir=full      # ~/Projects/claudio         claudio        basename
+model=full    # Opus 5 · high              Opus 5         no effort
+git=full      # main !2 you@example.com    main !2 you    no domain
+claudio=full  # 🎭 soc-analyst             (same)
+telemetry=full # 📡 localhost:4317         📡             icon only
+pyenv=full    # 🐍 myenv                   (same)
+mcp=full      # 🔌 3p 0g                   🔌3            p+g total
+docker=full   # 🐳 default·2               🐳2            count only
+context=full  # ◉ 42%                      42%            no glyph
+rates=full    # 31% ↻2h0m / 66% ↻2d7h      31%/66%        no countdown
+
+# ── Path length ────────────────────────────────────────────────────────────
+# Elide the directory beyond this many characters. 0 = unlimited.
+#
+# The middle goes first, keeping the first and last components — those are what
+# distinguish ~/work/acme/api from ~/play/acme/api. If the final component
+# alone still overruns, its own middle is cut, because the two ends of a name
+# carry the identity:
+#
+#   ~/Projects/deeply/nested/customer-alpha/services/api-gateway   (dir_max=0)
+#   ~/…/api-gateway                                                (dir_max=30)
+#   api-ga…teway                                                   (dir_max=12)
+dir_max=0
+
+# ── Fitting a narrow terminal ──────────────────────────────────────────────
+# Compact everything, then buy back width for the two facts worth it — which
+# account is being billed, and which profile is active:
+#
+#   default=short
+#   account=full
+#   dir_max=24
+#   git=off
