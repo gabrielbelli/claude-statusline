@@ -2,6 +2,10 @@
 
 Custom status line for [Claude Code](https://code.claude.com). A single bash script that reads the status line JSON from stdin and prints one ANSI-coloured line.
 
+```bash
+brew install gabrielbelli/tap/claude-statusline
+```
+
 ```
 👤 work  │  ~/Projects  │  Fable 5 · high  │  main ⇡1 !2  │  🎭 soc  │  📡 localhost:4317  │  🔌 5p 0g  │  🐳 default·4  │  ◉ 42%  │  ⚡31% ↻2h0m / 66% ↻2d7h
 ```
@@ -46,8 +50,11 @@ Because an account is a separate config dir, the `🔌` and `🐳` counts follow
 Optional. With no config file the line renders exactly as above.
 
 ```bash
-cp claude-statusline.conf.example ~/.config/claude-statusline.conf
+cp "$(brew --prefix)/opt/claude-statusline/share/claude-statusline/claude-statusline.conf.example" \
+   ~/.config/claude-statusline.conf
 ```
+
+(or `cp claude-statusline.conf.example ~/.config/` from a clone)
 
 Every segment takes `full`, `short` or `off`, and `default=` sets the fallback for anything you don't name — so one line fits a narrow terminal:
 
@@ -84,22 +91,49 @@ Override the location with `$CLAUDE_STATUSLINE_CONF`. Unknown keys and values ar
 
 ## Install
 
-Clone the repo, then point `statusLine` in `~/.claude/settings.json` at the script:
+```bash
+brew install gabrielbelli/tap/claude-statusline
+```
+
+Then point Claude Code at it in `~/.claude/settings.json`:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "bash /path/to/claude-statusline/statusline.sh"
+    "command": "claude-statusline"
   }
 }
 ```
 
+`brew upgrade` to update, `brew uninstall claude-statusline` to remove. Homebrew pulls in `jq` for you.
+
+<details>
+<summary>Without Homebrew</summary>
+
+```bash
+git clone https://github.com/gabrielbelli/claude-statusline
+```
+
+Then give the full path, remembering the interpreter:
+
+```json
+"command": "bash /path/to/claude-statusline/statusline.sh"
+```
+
+You'll need `jq` yourself. Update with `git pull`.
+
+> Worth avoiding an absolute path where you can. It breaks the moment the clone moves or is renamed, and it fails by the status line silently disappearing rather than by an error you can read. A command on `PATH` doesn't have that problem.
+
+</details>
+
 ## Test
 
 ```bash
-echo '{"workspace":{"current_dir":"'"$HOME"'/Projects"},"model":{"display_name":"Fable 5"},"effort":{"level":"high"},"context_window":{"used_percentage":42},"rate_limits":{"five_hour":{"used_percentage":31},"seven_day":{"used_percentage":66}}}' | bash statusline.sh
+echo '{"workspace":{"current_dir":"'"$HOME"'/Projects"},"model":{"display_name":"Fable 5"},"effort":{"level":"high"},"context_window":{"used_percentage":42},"rate_limits":{"five_hour":{"used_percentage":31},"seven_day":{"used_percentage":66}}}' | claude-statusline
 ```
+
+From a clone, `bash statusline.sh` instead.
 
 ## Graceful degradation
 
@@ -111,7 +145,7 @@ on; everything else appears only when it applies to your setup.
 
 ## Dependencies
 
-- `jq`
+- `jq` — installed for you by Homebrew
 - `git` (optional — segment skipped outside repos)
 - `docker` with the MCP Toolkit CLI plugin (optional — segment skipped if absent)
 
