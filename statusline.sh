@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 # Claude Code status line — lean
 
+# bash's printf parses floats through LC_NUMERIC, so in any locale with a comma
+# decimal separator — de, fr, pt_BR, es, it, nl, ru, tr, most of continental
+# Europe and Latin America — `printf '%.0f' 31.4` either refuses the argument
+# outright (bash 3.2) or parses "31" and stops (bash 5.3). The ⚡ and ◉ segments
+# then draw a plausible wrong number rather than losing a segment, which is the
+# one failure mode this script is otherwise built to avoid, and each render
+# leaks a `printf: invalid number` line to stderr.
+#
+# LC_ALL has to be *unset* rather than merely overridden: it outranks
+# LC_NUMERIC, so setting LC_NUMERIC alone fixes nothing. Its value moves to
+# LC_CTYPE first, because that is the one setting this script genuinely wants
+# from the user — `${#p}` and `${p:0:n}` in shorten_path count characters, and
+# a C LC_CTYPE would elide a multibyte path mid-character.
+if [ -n "${LC_ALL:-}" ]; then LC_CTYPE="$LC_ALL"; fi
+unset LC_ALL
+LC_NUMERIC=C
+export LC_NUMERIC LC_CTYPE
+
 input=$(cat)
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 proj_dir=$(echo "$input" | jq -r '.workspace.project_dir // empty')
