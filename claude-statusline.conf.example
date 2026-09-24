@@ -19,7 +19,8 @@ default=full
 #
 #              full                        short
 account=full  # 👤 blue-agent / 🌐·you      👤 / 🌐        icon only
-dir=full      # ~/Projects/claudio         claudio        basename
+dir=auto      # ~/P/acme/services/api      api            basename
+#              auto shrinks to fit (below); full shows the whole path up to dir_max
 model=full    # Opus 5 · high              Opus 5         no effort
 git=full      # main !2 you@example.com    main !2 you    no domain
 claudio=full  # 🎭 soc-analyst             (same)
@@ -31,16 +32,24 @@ context=full  # ◉ 42%                      42%            no glyph
 rates=full    # 31% ↻2h0m / 66% ↻2d7h      31%/66%        no countdown
 
 # ── Path length ────────────────────────────────────────────────────────────
-# Elide the directory beyond this many characters. 0 = unlimited.
+# The longest the path may be. Default 0 = no cap.
 #
-# The middle goes first, keeping the first and last components — those are what
-# distinguish ~/work/acme/api from ~/play/acme/api. If the final component
-# alone still overruns, its own middle is cut, because the two ends of a name
-# carry the identity:
+# dir=auto (the default) is the first segment to give way: it takes whatever
+# width the rest of the line leaves (and no more than dir_max, if set), and
+# shrinks only as far as it must, in stages —
+# middle folders to one letter first, then the middle elided, then the last
+# name cut in the middle:
 #
-#   ~/Projects/deeply/nested/customer-alpha/services/api-gateway   (dir_max=0)
-#   ~/…/api-gateway                                                (dir_max=30)
-#   api-ga…teway                                                   (dir_max=12)
+#   ~/Projects/deeply/nested/customer-alpha/services/api-gateway   (60 free)
+#   ~/P/d/nested/customer-alpha/services/api-gateway               (50 free)
+#   ~/P/d/n/c/services/api-gateway                                 (30 free)
+#   ~/…/api-gateway                                                (20 free)
+#   api-ga…teway                                                   (12 free)
+#
+# dir=full skips the letters and the width fitting, and only elides the middle
+# past dir_max, keeping as many whole trailing folders as fit:
+#
+#   ~/…/services/api-gateway                                       (30)
 dir_max=0
 
 # ── Fitting a narrow terminal ──────────────────────────────────────────────

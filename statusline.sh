@@ -59,7 +59,10 @@ rate_col() {
 #
 #   default=full|short|off     fallback for any segment not named
 #   <segment>=full|short|off
-#   dir_max=<n>                elide the path when longer than n characters
+#   dir=auto                   the default for dir: shrink the path smartly, first
+#                              in line to give way when the terminal is narrow
+#   dir_max=<n>                longest the path may be (default 0 = no cap; auto
+#                              still fits the terminal)
 #
 # Segments: account dir model git claudio telemetry pyenv mcp docker context rates
 #
@@ -90,6 +93,7 @@ if [ -f "$CONF" ]; then
     fi
     # Unknown values are ignored rather than fatal: a typo should cost you one
     # segment's styling, not your whole status line.
+    [ "$key" = dir ] && [ "$val" = auto ] && { cfg_dir=auto; continue; }
     case "$val" in full|short|off) ;; *) continue ;; esac
     case "$key" in
       default)   cfg_default="$val" ;;
@@ -110,30 +114,76 @@ fi
 # Resolve each to a plain variable now, so the segments below are simple string
 # tests rather than function calls — eleven subshells per render would be worse
 # than anything this config saves.
+# dir has a mode of its own: a full default means auto for the path, since the
+# path is the one segment that can shrink without losing what it tells you.
+[ -z "$cfg_dir" ] && [ "$cfg_default" = full ] && cfg_dir=auto
 for _s in account dir model git claudio telemetry pyenv mcp docker context rates; do
   eval "[ -n \"\$cfg_$_s\" ] || cfg_$_s=\$cfg_default"
 done
 
 shorten_path() {
-  # Elide the middle of a path that overruns $2, keeping the first component
-  # and the last: those are what tell ~/work/acme/api from ~/play/acme/api.
-  # If the final component alone still overruns, cut ITS middle for the same
-  # reason — the two ends of a name carry the identity, the middle rarely does.
-  local p="$1" max="$2" first last mid keep h t
+  # Elide the middle of a path that overruns $2. The first component stays, and
+  # so do as many trailing components as fit: the end of a path is where you
+  # are, the start is which tree it is in, and the middle is what you already
+  # know. If the final component alone still overruns, cut ITS middle for the
+  # same reason — the two ends of a name carry the identity, the middle rarely
+  # does.
+  local p="$1" max="$2" first prefix last tail rest seg keep h t
   case "$max" in ''|*[!0-9]*) printf '%s' "$p"; return ;; esac
   [ "$max" -le 0 ] && { printf '%s' "$p"; return; }
   [ "${#p}" -le "$max" ] && { printf '%s' "$p"; return; }
 
   last="${p##*/}"; first="${p%%/*}"
-  [ -z "$first" ] && first="/"
-  if [ "$first" != "$p" ] && [ "$last" != "$p" ]; then
-    mid="${first}/…/${last}"
-    [ "${#mid}" -le "$max" ] && { printf '%s' "$mid"; return; }
+  # "~/a/b" keeps "~/", and "/a/b" (empty first component) keeps "/".
+  prefix="${first}/"
+  if [ "$first" != "$p" ] && [ "$last" != "$p" ] \
+     && [ $(( ${#prefix} + 2 + ${#last} )) -le "$max" ]; then
+    tail="$last"; rest="${p%/*}"
+    while [ "$rest" != "$first" ]; do
+      seg="${rest##*/}"
+      [ $(( ${#prefix} + 2 + ${#seg} + 1 + ${#tail} )) -le "$max" ] || break
+      tail="${seg}/${tail}"; rest="${rest%/*}"
+    done
+    printf '%s…/%s' "$prefix" "$tail"
+    return
   fi
 
   keep=$(( max - 1 )); [ "$keep" -lt 4 ] && keep=4
   h=$(( (keep + 1) / 2 )); t=$(( keep / 2 ))
   printf '%s…%s' "${last:0:h}" "${last: -t}"
+}
+
+smart_path() {
+  # Shrink in stages, stopping at the first that fits $2:
+  #   1. abbreviate middle components to their first letter, left to right —
+  #      ~/Projects/acme/services/api becomes ~/P/acme/services/api, then
+  #      ~/P/a/services/api. The left end is the part you already know, and a
+  #      letter still tells ~/w/acme from ~/p/acme.
+  #   2. if every middle component is a letter and it still overruns, elide the
+  #      middle with shorten_path, which keeps whole trailing names.
+  # The first component (~ or the root) and the last are never abbreviated.
+  local p="$1" max="$2" parts n i s a len out
+  case "$max" in ''|*[!0-9]*) printf '%s' "$p"; return ;; esac
+  if [ "$max" -le 0 ] || [ "${#p}" -le "$max" ]; then printf '%s' "$p"; return; fi
+
+  IFS=/ read -r -a parts <<< "$p"
+  n=${#parts[@]}
+  len=${#p}
+  i=1
+  while [ "$i" -lt $(( n - 1 )) ] && [ "$len" -gt "$max" ]; do
+    s="${parts[i]}"
+    # Dotfiles keep the dot and one letter: ".c" says more than ".".
+    case "$s" in .?*) a="${s:0:2}" ;; *) a="${s:0:1}" ;; esac
+    parts[i]="$a"
+    len=$(( len - ${#s} + ${#a} ))
+    i=$(( i + 1 ))
+  done
+  if [ "$len" -le "$max" ]; then
+    out=$(IFS=/; printf '%s' "${parts[*]}")
+    printf '%s' "$out"
+    return
+  fi
+  shorten_path "$p" "$max"
 }
 
 # ── Model + effort ─────────────────────────────────────────────────────────
@@ -158,7 +208,6 @@ dir=$(echo "$cwd" | sed "s/^${home_escaped}/~/")
 [ -z "$dir" ] && dir="?"
 [ "$cfg_dir" = short ] && dir="${dir##*/}"
 [ "$cfg_dir" = off ] && dir=""
-[ -n "$dir" ] && dir=$(shorten_path "$dir" "$cfg_dir_max")
 
 # ── Git ────────────────────────────────────────────────────────────────────
 git_part=""
@@ -361,23 +410,52 @@ add() {
 
 # Account leads: which login is being billed is the highest-stakes fact here,
 # and the one you least want to discover after the fact.
-add "$acct"
-[ -n "$dir" ] && add "$(b 75)${dir}$(r)"
-add "$model_part"
-if [ -n "$git_part" ]; then
+if [ -n "$git_part" ] && [ -n "$git_user" ]; then
   # The committing identity rides with the branch rather than as its own
   # segment: it qualifies the branch, and a divider would overstate it.
-  [ -n "$git_user" ] && git_part="${git_part} $(c 245)${git_user}$(r)"
+  git_part="${git_part} $(c 245)${git_user}$(r)"
+fi
+build() {
+  out=""
+  add "$acct"
+  [ -n "$1" ] && add "$(b 75)${1}$(r)"
+  add "$model_part"
   add "$git_part"
+  add "$claudio"
+  add "$otel"
+  add "$pyenv"
+  add "$mcp_part"
+  add "$docker_part"
+  if [ -n "$ctx" ]; then
+    if [ "$cfg_context" = full ]; then add "$(c 240)◉$(r) ${ctx}"; else add "$ctx"; fi
+  fi
+  [ -n "$rates" ] && add "$(c 240)⚡$(r)${rates}"
+}
+
+# In auto mode the path is the first segment to give way, so it gets whatever
+# width the rest of the line leaves, and dir_max caps it further if set. Claude
+# Code exports COLUMNS to the status line command; without it, dir_max alone
+# decides.
+if [ "$cfg_dir" = full ] && [ -n "$dir" ]; then
+  dir=$(shorten_path "$dir" "$cfg_dir_max")
+elif [ "$cfg_dir" = auto ] && [ -n "$dir" ]; then
+  dir_budget="$cfg_dir_max"
+  # bash itself rewrites an empty or non-numeric COLUMNS to 0 at startup, so 0
+  # means "unknown" here, not a zero-width terminal.
+  case "${COLUMNS:-}" in
+    ''|0|*[!0-9]*) ;;
+    *)
+      build ""
+      plain=$(printf '%b' "$out" | sed $'s/\033\\[[0-9;]*m//g')
+      # 5 for the path's own separator, 8 slack for emoji that draw two cells
+      # wide but count as one character, and for Claude Code's own padding.
+      room=$(( COLUMNS - ${#plain} - 5 - 8 ))
+      [ "$room" -lt 12 ] && room=12
+      if [ "$dir_budget" -le 0 ] || [ "$room" -lt "$dir_budget" ]; then dir_budget="$room"; fi
+      ;;
+  esac
+  dir=$(smart_path "$dir" "$dir_budget")
 fi
-add "$claudio"
-add "$otel"
-add "$pyenv"
-add "$mcp_part"
-add "$docker_part"
-if [ -n "$ctx" ]; then
-  if [ "$cfg_context" = full ]; then add "$(c 240)◉$(r) ${ctx}"; else add "$ctx"; fi
-fi
-[ -n "$rates" ] && add "$(c 240)⚡$(r)${rates}"
+build "$dir"
 
 printf '%b' "$out"

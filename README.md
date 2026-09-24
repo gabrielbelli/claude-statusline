@@ -68,7 +68,7 @@ dir_max=24           # elide the path beyond 24 characters
 | Segment | `full` | `short` |
 |---|---|---|
 | `account` | `👤 blue-agent` / `🌐·you` | `👤` / `🌐` |
-| `dir` | `~/Projects/claudio` | `claudio` |
+| `dir` | `~/Projects/claudio` — `auto` is the default, see below | `claudio` |
 | `model` | `Opus 5 · high` | `Opus 5` |
 | `git` | `main !2 you@example.com` | `main !2 you` |
 | `telemetry` | `📡 localhost:4317` | `📡` |
@@ -79,13 +79,17 @@ dir_max=24           # elide the path beyond 24 characters
 
 `claudio` and `pyenv` have nothing to drop, so `short` matches `full`; both still honour `off`.
 
-**`dir_max`** elides the middle of an over-long path, keeping the first and last components — those are what distinguish `~/work/acme/api` from `~/play/acme/api`:
+**`dir=auto`** is the default for the path. It is the first segment to give way: it takes the width the rest of the line leaves (Claude Code passes `COLUMNS`), optionally capped by **`dir_max`** (default `0`, no cap). It shrinks only as far as it must, in stages. Middle folders become one letter first, since a letter still tells `~/w/acme` from `~/p/acme`. Then the middle is elided, and last of all the final name is cut in the middle:
 
 ```
-~/Projects/deeply/nested/customer-alpha/services/api-gateway
-~/…/api-gateway        dir_max=30
-api-ga…teway           dir_max=12   — the final component alone overran, so its middle went
+~/Projects/deeply/nested/customer-alpha/services/api-gateway   60 columns free
+~/P/d/nested/customer-alpha/services/api-gateway               50
+~/P/d/n/c/services/api-gateway                                 30
+~/…/api-gateway                                                20
+api-ga…teway                                                   12
 ```
+
+`dir=full` skips the letters and the width fitting: it shows the whole path and only elides the middle past `dir_max`, keeping as many whole trailing folders as fit (`~/…/services/api-gateway` at 30).
 
 Override the location with `$CLAUDE_STATUSLINE_CONF`. Unknown keys and values are skipped rather than fatal: a typo costs you one segment's styling, not the whole line.
 
